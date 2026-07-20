@@ -67,6 +67,12 @@
   .bigbtn.ghost{background:#3a3a3a;border:1px solid #4a4a4a}
   .chip{background:#3a3a3a;border:1px solid #4a4a4a;color:#ddd;border-radius:16px;padding:8px 15px;font-size:14px;cursor:pointer}
   .chip.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  .credit{position:absolute;left:12px;bottom:calc(40px + var(--safe-b));z-index:12;
+    font-size:11px;color:rgba(255,255,255,.55);pointer-events:none;text-shadow:0 1px 2px #000}
+  .noteitem{display:flex;align-items:center;gap:10px;padding:11px 14px;border-bottom:1px solid #383838}
+  .noteitem .nt{flex:1;font-size:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .noteitem .go,.noteitem .del{padding:6px 10px;border-radius:8px;background:#3a3a3a;border:1px solid #4a4a4a;font-size:13px}
+  .noteitem .del{background:#5a2020}
   .maplink{padding:8px 16px 14px;text-align:center}
   .maplink a{color:#5b9bd5;font-size:15px}
   .note{padding:10px 16px;color:var(--muted);font-size:13px;line-height:1.4}
@@ -87,6 +93,7 @@
 <body>
 
 <canvas id="cv"></canvas>
+<div class="credit">Hazırlayan: Bayram Yaraş · 0530 630 05 40</div>
 
 <div class="topbar">
   <span class="title">CAD</span>
@@ -101,6 +108,7 @@
   <div class="fab" onclick="zoomBy(1.3)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M11 8v6M8 11h6M20 20l-4-4"/></svg></div>
   <div class="fab" onclick="zoomBy(0.77)"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M8 11h6M20 20l-4-4"/></svg></div>
   <div class="fab" id="fabSearch" onclick="openSheet('search')"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg></div>
+  <div class="fab" id="fabNote" onclick="openSheet('note')"><svg viewBox="0 0 24 24"><path d="M4 4h13l3 3v13H4z"/><path d="M8 9h8M8 13h6"/></svg></div>
   <div class="fab" id="fabLayers" onclick="openSheet('layers')"><svg viewBox="0 0 24 24"><path d="M12 3l9 5-9 5-9-5z"/><path d="M3 13l9 5 9-5"/></svg></div>
   <div class="fab" id="fabFont" onclick="openSheet('font')"><svg viewBox="0 0 24 24"><path d="M5 20l5-14h1l5 14M7 15h7"/></svg></div>
   <div class="fab" id="fabGps" onclick="openSheet('gps')"><span class="dot"></span><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M12 2v3.5M12 18.5V22M2 12h3.5M18.5 12H22"/></svg></div>
@@ -188,6 +196,35 @@
   </div>
 </div>
 
+<!-- NOT / ÖLÇÜ SAYFASI -->
+<div class="sheet" id="sheet-note">
+  <div class="grip"></div>
+  <h3>Notlar & Ölçü <span class="close" onclick="closeSheets()">✕</span></h3>
+  <div class="sheet-body">
+    <div class="note">Haritaya dokunarak not ekle (örn. "Cadde 8 m"). Ölçü ile iki noktaya dokun, mesafeyi metre olarak not yapar.</div>
+    <button class="bigbtn" onclick="setMode('note')">➕ Haritaya dokunup not ekle</button>
+    <button class="bigbtn ghost" onclick="setMode('measure')">📏 Mesafe ölç → not (cadde vb.)</button>
+    <button class="bigbtn ghost" onclick="clearMeasure()">Ölçü çizgisini temizle</button>
+    <button class="bigbtn" style="background:#25D366;color:#04310f" onclick="shareImage()">📤 Notlu görüntüyü gönder (WhatsApp…)</button>
+    <div class="note" style="font-weight:600;color:#cfcfcf">Kayıtlı notlar</div>
+    <div id="noteList"><div class="note">Henüz not yok.</div></div>
+  </div>
+</div>
+
+<!-- NOT DÜZENLE SAYFASI -->
+<div class="sheet" id="sheet-noteedit">
+  <div class="grip"></div>
+  <h3>Not <span class="close" onclick="closeSheets()">✕</span></h3>
+  <div class="sheet-body">
+    <div style="padding:8px 16px">
+      <input id="noteText" placeholder="Örn. Cadde genişliği 8 m" autocomplete="off"
+        style="width:100%;padding:13px;border-radius:10px;border:1px solid #4a4a4a;background:#1e1e1e;color:#fff;font-size:16px">
+    </div>
+    <button class="bigbtn" onclick="saveNote()">Kaydet</button>
+    <button class="bigbtn ghost" id="noteDelBtn" onclick="deleteCurrentNote()" style="background:#5a2020;display:none">Sil</button>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <input type="file" id="file" accept=".dxf,.dwg" onchange="loadFile(this.files[0])">
@@ -207,6 +244,9 @@ let gpsWatch=null, gpsId=null, gpsPos=null, gpsPrev=null, lastFix=null, gpsHadFi
 let tracking=false, followMode=true, calibMode=false;
 const calib={dx:0,dy:0};
 let PROJ='utm';   // 'utm'=UTM 6° (k0 0.9996), 'tm3'=Türkiye TM 3° (k0 1.0)
+let mode='none';  // 'none' | 'note' | 'measure'
+let notes=[], editing=null, measure=null, noteSeq=1, curFile='';
+let gMoved=false, gDown=null;
 const state={scale:1,ox:0,oy:0};
 
 /* ==== DXF ayrıştırıcı ==== */
@@ -327,6 +367,18 @@ function render(){
     if(gpsPos.hd!=null){const a=gpsPos.hd*Math.PI/180,ux=Math.sin(a),uy=-Math.cos(a),px=-uy,py=ux;
       ctx.fillStyle='#1e90ff';ctx.beginPath();ctx.moveTo(s[0]+ux*26,s[1]+uy*26);ctx.lineTo(s[0]+px*9,s[1]+py*9);ctx.lineTo(s[0]-px*9,s[1]-py*9);ctx.closePath();ctx.fill();}
     ctx.fillStyle='#1e90ff';ctx.strokeStyle='#fff';ctx.lineWidth=2.5;ctx.beginPath();ctx.arc(s[0],s[1],7,0,6.2832);ctx.fill();ctx.stroke();ctx.lineWidth=1;}
+  if(measure&&measure.p1){const a=w2s(measure.p1[0],measure.p1[1]);ctx.strokeStyle='#00e5ff';ctx.lineWidth=2;ctx.setLineDash([7,5]);
+    if(measure.p2){const b=w2s(measure.p2[0],measure.p2[1]);ctx.beginPath();ctx.moveTo(a[0],a[1]);ctx.lineTo(b[0],b[1]);ctx.stroke();
+      const d=Math.hypot(measure.p1[0]-measure.p2[0],measure.p1[1]-measure.p2[1]),mx=(a[0]+b[0])/2,my=(a[1]+b[1])/2;
+      ctx.setLineDash([]);ctx.font='13px sans-serif';const t=d.toFixed(2)+' m',tw=ctx.measureText(t).width;
+      ctx.fillStyle='rgba(0,0,0,.78)';ctx.fillRect(mx-tw/2-5,my-10,tw+10,19);ctx.fillStyle='#00e5ff';ctx.fillText(t,mx-tw/2,my+4);}
+    ctx.setLineDash([]);ctx.lineWidth=1;ctx.fillStyle='#00e5ff';ctx.beginPath();ctx.arc(a[0],a[1],4,0,6.2832);ctx.fill();}
+  for(const nt of notes){const s=w2s(nt.x,nt.y);
+    ctx.fillStyle='#ffcc00';ctx.strokeStyle='#000';ctx.lineWidth=1.5;
+    ctx.beginPath();ctx.moveTo(s[0],s[1]);ctx.lineTo(s[0]-6,s[1]-12);ctx.lineTo(s[0]+6,s[1]-12);ctx.closePath();ctx.fill();ctx.stroke();
+    ctx.font='12px sans-serif';const tw=ctx.measureText(nt.text).width;
+    ctx.fillStyle='rgba(0,0,0,.78)';ctx.fillRect(s[0]+8,s[1]-20,tw+8,17);
+    ctx.fillStyle='#ffde59';ctx.fillText(nt.text,s[0]+12,s[1]-8);ctx.lineWidth=1;}
 }
 function fitView(){if(!drawing){resize();return;}const b=drawing.bbox,w=b.maxx-b.minx||1,h=b.maxy-b.miny||1;state.scale=Math.min(innerWidth/w,innerHeight/h)*0.9;const cx=(b.minx+b.maxx)/2,cy=(b.miny+b.maxy)/2;state.ox=innerWidth/2-cx*state.scale;state.oy=innerHeight/2+cy*state.scale;updZoom();render();}
 function zoomBy(f,sx,sy){sx=sx??innerWidth/2;sy=sy??innerHeight/2;const[wx,wy]=s2w(sx,sy);state.scale*=f;state.ox=sx-wx*state.scale;state.oy=sy+wy*state.scale;updZoom();render();}
@@ -334,17 +386,18 @@ function updZoom(){document.getElementById('zoomv').textContent=state.scale.toFi
 
 /* ==== Dokunma: pan + pinch ==== */
 let t1=null,pinch=null;
-cv.addEventListener('touchstart',e=>{if(e.touches.length===1){t1={x:e.touches[0].clientX,y:e.touches[0].clientY,ox:state.ox,oy:state.oy};pinch=null;}else if(e.touches.length===2){pinch={d:tdist(e),cx:(e.touches[0].clientX+e.touches[1].clientX)/2,cy:(e.touches[0].clientY+e.touches[1].clientY)/2};t1=null;}},{passive:false});
+cv.addEventListener('touchstart',e=>{gMoved=false;gDown={x:e.touches[0].clientX,y:e.touches[0].clientY};if(e.touches.length===1){t1={x:e.touches[0].clientX,y:e.touches[0].clientY,ox:state.ox,oy:state.oy};pinch=null;}else if(e.touches.length===2){pinch={d:tdist(e),cx:(e.touches[0].clientX+e.touches[1].clientX)/2,cy:(e.touches[0].clientY+e.touches[1].clientY)/2};t1=null;}},{passive:false});
 cv.addEventListener('touchmove',e=>{e.preventDefault();
+  if(gDown&&Math.hypot(e.touches[0].clientX-gDown.x,e.touches[0].clientY-gDown.y)>9)gMoved=true;
   if(e.touches.length===1&&t1){state.ox=t1.ox+(e.touches[0].clientX-t1.x);state.oy=t1.oy+(e.touches[0].clientY-t1.y);const w=s2w(e.touches[0].clientX,e.touches[0].clientY);document.getElementById('coord').textContent=w[0].toFixed(3)+', '+w[1].toFixed(3);render();}
   else if(e.touches.length===2&&pinch){const nd=tdist(e);zoomBy(nd/pinch.d,pinch.cx,pinch.cy);pinch.d=nd;}
 },{passive:false});
 cv.addEventListener('touchend',()=>{t1=null;pinch=null;});
 function tdist(e){return Math.hypot(e.touches[0].clientX-e.touches[1].clientX,e.touches[0].clientY-e.touches[1].clientY);}
 /* fare (PC testi) */
-let md=null;cv.addEventListener('mousedown',e=>md={x:e.clientX,y:e.clientY,ox:state.ox,oy:state.oy});
+let md=null;cv.addEventListener('mousedown',e=>{md={x:e.clientX,y:e.clientY,ox:state.ox,oy:state.oy};gMoved=false;gDown={x:e.clientX,y:e.clientY};});
 addEventListener('mouseup',()=>md=null);
-addEventListener('mousemove',e=>{const w=s2w(e.clientX,e.clientY);document.getElementById('coord').textContent=w[0].toFixed(3)+', '+w[1].toFixed(3);if(md){state.ox=md.ox+(e.clientX-md.x);state.oy=md.oy+(e.clientY-md.y);render();}});
+addEventListener('mousemove',e=>{const w=s2w(e.clientX,e.clientY);document.getElementById('coord').textContent=w[0].toFixed(3)+', '+w[1].toFixed(3);if(gDown&&Math.hypot(e.clientX-gDown.x,e.clientY-gDown.y)>9)gMoved=true;if(md){state.ox=md.ox+(e.clientX-md.x);state.oy=md.oy+(e.clientY-md.y);render();}});
 cv.addEventListener('wheel',e=>{e.preventDefault();zoomBy(e.deltaY<0?1.12:0.89,e.clientX,e.clientY);},{passive:false});
 
 /* ==== Dosya ==== */
@@ -361,7 +414,7 @@ function openFromBuffer(name,arrbuf){
     else if(cp.includes('1256'))label='windows-1256';}
   let text;try{text=new TextDecoder(label).decode(buf);}catch(_){text=new TextDecoder('utf-8').decode(buf);}
   setTimeout(()=>{try{drawing=flatten(parseDXF(text));buildLayers();
-    document.getElementById('fileName').textContent=name||'dosya.dxf';fitView();
+    document.getElementById('fileName').textContent=name||'dosya.dxf';loadNotes(name||'dosya.dxf');fitView();
     toast(drawing.prims.length+' nesne yüklendi ('+label+')');
   }catch(err){toast('Çizim hatası: '+err.message);}},30);
 }
@@ -496,11 +549,51 @@ function startCalib(){if(!lastFix){toast('Önce Canlı Takip ile konum al');retu
 /* ==== Toast ==== */
 let tT;function toast(m){const t=document.getElementById('toast');t.textContent=m;t.classList.add('show');clearTimeout(tT);tT=setTimeout(()=>t.classList.remove('show'),2200);}
 
-/* Kalibrasyon: haritaya dokununca GPS ile çizim farkını kilitle */
-cv.addEventListener('click',e=>{if(!calibMode||!lastFix)return;
+/* ==== Not & Ölçü ==== */
+function setNoteFab(on){const f=document.getElementById('fabNote');if(f)f.style.background=on?'var(--accent)':'';}
+function setMode(m){mode=m;setNoteFab(m!=='none');closeSheets();
+  toast(m==='note'?'Haritada not koyacağın yere dokun':m==='measure'?'İlk noktaya dokun':'');}
+function hitNote(x,y){const p=w2s(x,y);let best=null,bd=22;for(const n of notes){const s=w2s(n.x,n.y);const d=Math.hypot(s[0]-p[0],s[1]-p[1]);if(d<bd){bd=d;best=n;}}return best;}
+function openNoteEditor(note,x,y,prefill){
+  editing=note?note:{id:noteSeq++,x:x,y:y,text:''};
+  document.getElementById('noteText').value=note?note.text:(prefill||'');
+  document.getElementById('noteDelBtn').style.display=note?'block':'none';
+  openSheet('noteedit');setTimeout(()=>document.getElementById('noteText').focus(),200);
+}
+function saveNote(){const t=document.getElementById('noteText').value.trim();if(!t){toast('Not boş');return;}
+  editing.text=t;const i=notes.findIndex(n=>n.id===editing.id);if(i>=0)notes[i]=editing;else notes.push(editing);
+  persistNotes();renderNoteList();mode='none';setNoteFab(false);closeSheets();render();toast('Not kaydedildi');}
+function deleteCurrentNote(){if(!editing)return;notes=notes.filter(n=>n.id!==editing.id);persistNotes();renderNoteList();closeSheets();render();toast('Not silindi');}
+function delNote(id){notes=notes.filter(n=>n.id!==id);persistNotes();renderNoteList();render();}
+function gotoNote(id){const n=notes.find(x=>x.id===id);if(!n)return;gotoPoint(n.x,n.y);highlight={x:n.x,y:n.y};if(highlightTimer)clearTimeout(highlightTimer);highlightTimer=setTimeout(()=>{highlight=null;render();},3000);render();}
+function renderNoteList(){const el=document.getElementById('noteList');if(!el)return;
+  if(!notes.length){el.innerHTML='<div class="note">Henüz not yok.</div>';return;}
+  el.innerHTML='';notes.forEach(n=>{const d=document.createElement('div');d.className='noteitem';
+    d.innerHTML='<span class="nt"></span><span class="go">Git</span><span class="del">Sil</span>';
+    d.querySelector('.nt').textContent=n.text;
+    d.querySelector('.go').onclick=()=>{closeSheets();gotoNote(n.id);};
+    d.querySelector('.del').onclick=()=>delNote(n.id);el.appendChild(d);});}
+function measureTap(x,y){
+  if(!measure||measure.p2){measure={p1:[x,y]};render();toast('İkinci noktaya dokun');return;}
+  measure.p2=[x,y];render();
+  const d=Math.hypot(x-measure.p1[0],y-measure.p1[1]),mx=(measure.p1[0]+measure.p2[0])/2,my=(measure.p1[1]+measure.p2[1])/2;
+  mode='none';setNoteFab(false);openNoteEditor(null,mx,my,d.toFixed(2)+' m');
+}
+function clearMeasure(){measure=null;render();closeSheets();}
+function persistNotes(){try{localStorage.setItem('notes:'+(curFile||'x'),JSON.stringify(notes));}catch(e){}}
+function loadNotes(name){curFile=name;try{const s=localStorage.getItem('notes:'+name);notes=s?JSON.parse(s):[];}catch(e){notes=[];}
+  noteSeq=notes.reduce((m,n)=>Math.max(m,n.id||0),0)+1;renderNoteList();}
+
+/* Haritaya dokunma: kalibrasyon / not / ölçü */
+cv.addEventListener('click',e=>{
+  if(gMoved)return;                 // kaydırma ise not/ölçü ekleme
   const r=cv.getBoundingClientRect();const w=s2w(e.clientX-r.left,e.clientY-r.top);
-  const pr=project(lastFix.lat,lastFix.lon);calib.dx=w[0]-pr.e;calib.dy=w[1]-pr.n;calibMode=false;
-  showPos({latitude:lastFix.lat,longitude:lastFix.lon,accuracy:gpsPos?gpsPos.acc:null});toast('Kalibre edildi ✓');});
+  if(calibMode&&lastFix){const pr=project(lastFix.lat,lastFix.lon);calib.dx=w[0]-pr.e;calib.dy=w[1]-pr.n;calibMode=false;
+    showPos({latitude:lastFix.lat,longitude:lastFix.lon,accuracy:gpsPos?gpsPos.acc:null});toast('Kalibre edildi ✓');return;}
+  if(mode==='note'){openNoteEditor(null,w[0],w[1],'');return;}
+  if(mode==='measure'){measureTap(w[0],w[1]);return;}
+  const n=hitNote(w[0],w[1]);if(n)openNoteEditor(n);
+});
 
 /* Enter ile ara + varsayılan renk modunu işaretle */
 document.getElementById('searchInput').addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();doSearch();}});
