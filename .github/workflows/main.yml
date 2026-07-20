@@ -29,13 +29,17 @@ jobs:
       - name: Android SDK kur
         uses: android-actions/setup-android@v3
 
-      - name: Paketleri yükle
+      - name: index.html'i www'ye kopyala (kokten)
+        run: |
+          if [ -f index.html ]; then mkdir -p www && cp index.html www/index.html; fi
+
+      - name: Paketleri yukle
         run: npm install
 
       - name: Android platformu ekle
         run: npx cap add android
 
-      - name: Otomatik yamalar
+      - name: Otomatik yamalar (MainActivity + izinler + largeHeap + ikon)
         run: node setup-android.js
 
       - name: Senkronla
@@ -47,15 +51,15 @@ jobs:
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
 
-      - name: APK yükle
+      - name: APK yukle (artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: cad-goruntuleyici-apk
+          name: cad-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
 
-      - name: Release yayınla
+      - name: Release yayinla
         uses: softprops/action-gh-release@v2
         with:
           tag_name: derleme-${{ github.run_number }}
-          name: CAD Görüntüleyici (derleme ${{ github.run_number }})
+          name: CAD Goruntuleyici (derleme ${{ github.run_number }})
           files: android/app/build/outputs/apk/debug/app-debug.apk
