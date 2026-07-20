@@ -161,4 +161,42 @@ if (xml.includes('CADVIEWER-INTENTS')) {
 }
 
 fs.writeFileSync(manifestPath, xml);
+
+// 4) Uygulama ikonu ("BY" pin) — adaptive + legacy
+try {
+  if (fs.existsSync('icons-data.json')) {
+    const ic = JSON.parse(fs.readFileSync('icons-data.json', 'utf8'));
+    const resDir = path.join('android', 'app', 'src', 'main', 'res');
+    const dens = ['mdpi', 'hdpi', 'xhdpi', 'xxhdpi', 'xxxhdpi'];
+    for (const d of dens) {
+      const mp = path.join(resDir, 'mipmap-' + d);
+      fs.mkdirSync(mp, { recursive: true });
+      if (ic.legacy && ic.legacy[d]) {
+        const b = Buffer.from(ic.legacy[d], 'base64');
+        fs.writeFileSync(path.join(mp, 'ic_launcher.png'), b);
+        fs.writeFileSync(path.join(mp, 'ic_launcher_round.png'), b);
+      }
+      if (ic.foreground && ic.foreground[d]) {
+        fs.writeFileSync(path.join(mp, 'ic_launcher_foreground.png'), Buffer.from(ic.foreground[d], 'base64'));
+      }
+    }
+    const any = path.join(resDir, 'mipmap-anydpi-v26');
+    fs.mkdirSync(any, { recursive: true });
+    const adaptive = '<?xml version="1.0" encoding="utf-8"?>\n<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">\n    <background android:drawable="@color/ic_launcher_background"/>\n    <foreground android:drawable="@mipmap/ic_launcher_foreground"/>\n</adaptive-icon>\n';
+    fs.writeFileSync(path.join(any, 'ic_launcher.xml'), adaptive);
+    fs.writeFileSync(path.join(any, 'ic_launcher_round.xml'), adaptive);
+    const valDir = path.join(resDir, 'values');
+    fs.mkdirSync(valDir, { recursive: true });
+    fs.writeFileSync(path.join(valDir, 'ic_launcher_background.xml'),
+      '<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">' + (ic.background || '#122036') + '</color>\n</resources>\n');
+    for (const dd of ['drawable', 'drawable-v24', 'drawable-anydpi-v24']) {
+      const p = path.join(resDir, dd, 'ic_launcher_background.xml');
+      if (fs.existsSync(p)) fs.unlinkSync(p);
+    }
+    ok('Uygulama ikonu ("BY" pin) yerleştirildi');
+  } else {
+    info('icons-data.json yok, varsayılan ikon kalır');
+  }
+} catch (e) { console.error('  ! İkon yazılamadı: ' + e.message); }
+
 console.log('\n\u2714 Android kurulumu tamam. Sıradaki:  npx cap sync  →  Build APK\n');

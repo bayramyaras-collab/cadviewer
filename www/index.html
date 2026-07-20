@@ -161,10 +161,15 @@
     </div>
     <button class="bigbtn" id="trackBtn" onclick="locateGPS()">Canlı Takip Başlat</button>
     <button class="bigbtn ghost" id="followBtn" onclick="toggleFollow(this)" style="background:var(--accent)">Beni Ortala: AÇIK</button>
-    <div class="note" style="font-weight:600;color:#cfcfcf">Projeksiyon (konumu çizime oturtma)</div>
-    <div style="display:flex;gap:8px;padding:2px 16px 6px">
-      <button class="chip projbtn" style="background:var(--accent);color:#fff" onclick="setProj(this,'utm')">UTM 6°</button>
-      <button class="chip projbtn" onclick="setProj(this,'tm3')">TM 3°</button>
+    <div class="note" style="font-weight:600;color:#cfcfcf">İmar koordinat sistemi (ITRF96 / TM)</div>
+    <div style="display:flex;gap:8px;padding:2px 16px 6px;flex-wrap:wrap">
+      <button class="chip crsbtn" onclick="setCRS(this,'tm3',27)">TM3 27°</button>
+      <button class="chip crsbtn" onclick="setCRS(this,'tm3',30)">TM3 30°</button>
+      <button class="chip crsbtn" style="background:var(--accent);color:#fff" onclick="setCRS(this,'tm3',33)">TM3 33°</button>
+      <button class="chip crsbtn" onclick="setCRS(this,'tm3',36)">TM3 36°</button>
+      <button class="chip crsbtn" onclick="setCRS(this,'tm3',39)">TM3 39°</button>
+      <button class="chip crsbtn" onclick="setCRS(this,'tm3',42)">TM3 42°</button>
+      <button class="chip crsbtn" onclick="setCRS(this,'utm',0)">UTM 6° (GPS oto)</button>
     </div>
     <button class="bigbtn ghost" onclick="startCalib()">Kalibrasyon: haritadaki yerime dokunacağım</button>
     <div class="note">Nokta çizimin üzerine tam oturmazsa: UTM/TM'yi değiştir ya da Kalibrasyon'a bas, sonra haritada gerçekte bulunduğun noktaya dokun — fark kilitlenir.</div>
@@ -258,7 +263,8 @@ let highlightTimer=null;
 let gpsWatch=null, gpsId=null, gpsPos=null, gpsPrev=null, lastFix=null, gpsHadFix=false;
 let tracking=false, followMode=true, calibMode=false;
 const calib={dx:0,dy:0};
-let PROJ='utm';   // 'utm'=UTM 6° (k0 0.9996), 'tm3'=Türkiye TM 3° (k0 1.0)
+let PROJ='tm3';   // 'tm3'=ITRF96 TM 3° (k0 1.0), 'utm'=UTM 6° (k0 0.9996)
+let projManual=true;   // true: merkez meridyen elle seçili (projLon0), false: GPS'ten otomatik
 let mode='none';  // 'none' | 'note' | 'measure'
 let notes=[], editing=null, measure=null, noteSeq=1, curFile='';
 let gMoved=false, gDown=null;
@@ -511,7 +517,8 @@ function closeSheets(){document.querySelectorAll('.sheet').forEach(s=>s.classLis
 /* ==== WGS84 -> UTM/TM izdüşümü (konumu çizime oturtmak için) ==== */
 function project(lat,lon){
   const a=6378137.0,f=1/298.257223563,e2=f*(2-f);let k0,lon0;
-  if(PROJ==='tm3'){k0=1.0;lon0=Math.round(lon/3)*3;}
+  if(projManual){k0=(PROJ==='tm3')?1.0:0.9996;lon0=projLon0;}
+  else if(PROJ==='tm3'){k0=1.0;lon0=Math.round(lon/3)*3;}
   else{k0=0.9996;const zone=Math.floor((lon+180)/6)+1;lon0=(zone-1)*6-180+3;}
   projLon0=lon0;
   const rl=lat*Math.PI/180,ro=(lon-lon0)*Math.PI/180,ep2=e2/(1-e2);
@@ -632,8 +639,10 @@ function stopGPS(){
 function setTrackBtn(){const b=document.getElementById('trackBtn');if(b){b.textContent=tracking?'Canlı Takibi Durdur':'Canlı Takip Başlat';b.style.background=tracking?'#c0392b':'';}}
 function toggleFollow(btn){followMode=!followMode;btn.style.background=followMode?'var(--accent)':'';btn.textContent=followMode?'Beni Ortala: AÇIK':'Beni Ortala: KAPALI';
   if(followMode&&gpsPos){state.ox=innerWidth/2-gpsPos.x*state.scale;state.oy=innerHeight/2+gpsPos.y*state.scale;updZoom();render();}}
-function setProj(btn,m){PROJ=m;document.querySelectorAll('.projbtn').forEach(b=>b.style.background='');btn.style.background='var(--accent)';btn.style.color='#fff';
-  if(lastFix)showPos({latitude:lastFix.lat,longitude:lastFix.lon,accuracy:gpsPos?gpsPos.acc:null});toast('Projeksiyon: '+m.toUpperCase());}
+function setCRS(btn,mode,cm){PROJ=mode;if(mode==='utm'){projManual=false;}else{projManual=true;projLon0=cm;}
+  document.querySelectorAll('.crsbtn').forEach(b=>{b.style.background='';b.style.color='';});if(btn){btn.style.background='var(--accent)';btn.style.color='#fff';}
+  if(lastFix)showPos({latitude:lastFix.lat,longitude:lastFix.lon,accuracy:gpsPos?gpsPos.acc:null});
+  render();toast(mode==='utm'?'UTM 6° (GPS otomatik)':'TM3 '+cm+'° seçildi');}
 function startCalib(){if(!lastFix){toast('Önce Canlı Takip ile konum al');return;}calibMode=true;closeSheets();toast('Haritada gerçekte bulunduğun NOKTAYA dokun');}
 
 /* ==== Toast ==== */
