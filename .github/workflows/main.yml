@@ -1,0 +1,61 @@
+name: APK Derle
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Kodu al
+        uses: actions/checkout@v4
+
+      - name: Node kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Java kur
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Android SDK kur
+        uses: android-actions/setup-android@v3
+
+      - name: Paketleri yükle
+        run: npm install
+
+      - name: Android platformu ekle
+        run: npx cap add android
+
+      - name: Otomatik yamalar
+        run: node setup-android.js
+
+      - name: Senkronla
+        run: npx cap sync
+
+      - name: APK derle
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: APK yükle
+        uses: actions/upload-artifact@v4
+        with:
+          name: cad-goruntuleyici-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Release yayınla
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: derleme-${{ github.run_number }}
+          name: CAD Görüntüleyici (derleme ${{ github.run_number }})
+          files: android/app/build/outputs/apk/debug/app-debug.apk
