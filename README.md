@@ -36,6 +36,7 @@ kayıtlarını** ve **MainActivity**'yi yerleştirir, sonra APK'yı derleyip yay
 Elle dosya düzenlemek yok.
 
 ## Notlar
+- Uygulama ikonu ve açılış ekranı `assets/` içindeki görsellerden otomatik üretilir (özel "BY" pinli ikon). İkonu değiştirmek istersen `assets/icon.png` (1024x1024) dosyasını değiştirip push et.
 - Paket adı `capacitor.config.json` içindeki `appId` (varsayılan `com.harita.cadviewer`).
 - Fontlar `www/index.html` içine gömülü — ayrı kurulum yok.
 - DWG doğrudan açılmaz; çizimi önce **DXF**'e çevir.

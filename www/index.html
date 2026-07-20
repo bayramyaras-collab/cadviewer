@@ -94,6 +94,11 @@
 
 <canvas id="cv"></canvas>
 <div class="credit">Hazırlayan: Bayram Yaraş · 0530 630 05 40</div>
+<div id="navbar" style="display:none;position:absolute;left:50%;transform:translateX(-50%);bottom:calc(46px + var(--safe-b));z-index:30;background:#2b2b2b;border:1px solid #4a4a4a;border-radius:26px;padding:7px 8px 7px 16px;align-items:center;gap:10px;box-shadow:0 4px 16px rgba(0,0,0,.55)">
+  <span id="navlabel" style="font-size:13px;color:#eee;max-width:44vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+  <button onclick="navigateTo()" style="background:#25D366;color:#04310f;border:none;border-radius:20px;padding:10px 15px;font-weight:700;font-size:14px">🧭 Buraya git</button>
+  <span onclick="hideNav()" style="color:#9a9a9a;padding:6px 8px;font-size:16px">✕</span>
+</div>
 
 <div class="topbar">
   <span class="title">CAD</span>
@@ -128,8 +133,18 @@
 <!-- KATMAN SAYFASI -->
 <div class="sheet" id="sheet-layers">
   <div class="grip"></div>
-  <h3>Katmanlar <span class="close" onclick="closeSheets()">✕</span></h3>
-  <div class="sheet-body" id="layerList"><div class="note">Bir DXF açınca katmanlar burada listelenir.</div></div>
+  <h3>Katmanlar & Altlık <span class="close" onclick="closeSheets()">✕</span></h3>
+  <div class="sheet-body">
+    <div class="note" style="font-weight:600;color:#cfcfcf">Altlık (uydu)</div>
+    <div style="display:flex;gap:8px;padding:2px 14px 8px;flex-wrap:wrap">
+      <button class="chip baselayerbtn" style="background:var(--accent);color:#fff" onclick="setBase(this,'none')">Kapalı</button>
+      <button class="chip baselayerbtn" onclick="setBase(this,'uydu')">Uydu</button>
+      <button class="chip baselayerbtn" onclick="setBase(this,'hibrit')">Hibrit</button>
+      <button class="chip baselayerbtn" onclick="setBase(this,'yol')">Yol</button>
+    </div>
+    <div class="note" style="font-weight:600;color:#cfcfcf">Çizim katmanları</div>
+    <div id="layerList"><div class="note">Bir DXF açınca katmanlar burada listelenir.</div></div>
+  </div>
 </div>
 
 <!-- GPS SAYFASI -->
@@ -247,6 +262,9 @@ let PROJ='utm';   // 'utm'=UTM 6° (k0 0.9996), 'tm3'=Türkiye TM 3° (k0 1.0)
 let mode='none';  // 'none' | 'note' | 'measure'
 let notes=[], editing=null, measure=null, noteSeq=1, curFile='';
 let gMoved=false, gDown=null;
+let projLon0=33, lastTarget=null;   // projLon0: son GPS/kalibrasyon merkez meridyeni
+let baseLayer='none';               // 'none' | 'uydu' | 'hibrit' | 'yol'
+const tileCache=new Map();
 const state={scale:1,ox:0,oy:0};
 
 /* ==== DXF ayrıştırıcı ==== */
@@ -340,6 +358,7 @@ function render(){
   ctx.clearRect(0,0,W,H);
   if(!drawing){document.getElementById('hint').style.display='flex';return;}
   document.getElementById('hint').style.display='none';
+  drawBasemap();
   ctx.lineWidth=1;
   for(const pr of drawing.prims){const L=drawing.layers[pr.layer];if(L&&L.on===false)continue;
     const b=pr.bb;if(b){const s1=w2s(b[0],b[1]),s2=w2s(b[2],b[3]);
@@ -453,7 +472,7 @@ function findText(qraw){
   if(!hits.length){highlight=null;info.textContent='Bulunamadı: '+qraw;toast('Bulunamadı: '+qraw);render();return;}
   hits.sort((a,b)=>(norm(a.text)===q?0:1)-(norm(b.text)===q?0:1));
   const h=hits[searchIdx%hits.length];searchIdx++;
-  gotoPoint(h.p[0],h.p[1]);highlight={x:h.p[0],y:h.p[1]};
+  gotoPoint(h.p[0],h.p[1]);highlight={x:h.p[0],y:h.p[1]};lastTarget={x:h.p[0],y:h.p[1]};showNav(h.text.trim());
   if(highlightTimer)clearTimeout(highlightTimer);
   highlightTimer=setTimeout(()=>{highlight=null;render();},3000);
   const pos=((searchIdx-1)%hits.length)+1;
@@ -494,12 +513,83 @@ function project(lat,lon){
   const a=6378137.0,f=1/298.257223563,e2=f*(2-f);let k0,lon0;
   if(PROJ==='tm3'){k0=1.0;lon0=Math.round(lon/3)*3;}
   else{k0=0.9996;const zone=Math.floor((lon+180)/6)+1;lon0=(zone-1)*6-180+3;}
+  projLon0=lon0;
   const rl=lat*Math.PI/180,ro=(lon-lon0)*Math.PI/180,ep2=e2/(1-e2);
   const N=a/Math.sqrt(1-e2*Math.sin(rl)**2),T=Math.tan(rl)**2,C=ep2*Math.cos(rl)**2,A=Math.cos(rl)*ro;
   const M=a*((1-e2/4-3*e2*e2/64-5*e2**3/256)*rl-(3*e2/8+3*e2*e2/32+45*e2**3/1024)*Math.sin(2*rl)+(15*e2*e2/256+45*e2**3/1024)*Math.sin(4*rl)-(35*e2**3/3072)*Math.sin(6*rl));
   const e_=k0*N*(A+(1-T+C)*A**3/6+(5-18*T+T*T+72*C-58*ep2)*A**5/120)+500000;
   let n_=k0*(M+N*Math.tan(rl)*(A*A/2+(5-T+9*C+4*C*C)*A**4/24+(61-58*T+T*T+600*C-330*ep2)*A**6/720));
   if(lat<0)n_+=1e7;return {e:e_,n:n_};
+}
+/* UTM/TM -> WGS84 (enlem/boylam) : navigasyon için */
+function unproject(e,n){
+  const a=6378137.0,f=1/298.257223563,e2=f*(2-f);
+  const k0=(PROJ==='tm3')?1.0:0.9996, lon0=projLon0;
+  const x=e-500000, y=n;
+  const e1=(1-Math.sqrt(1-e2))/(1+Math.sqrt(1-e2)), ep2=e2/(1-e2);
+  const M=y/k0, mu=M/(a*(1-e2/4-3*e2*e2/64-5*e2**3/256));
+  const phi1=mu+(3*e1/2-27*e1**3/32)*Math.sin(2*mu)+(21*e1*e1/16-55*e1**4/32)*Math.sin(4*mu)+(151*e1**3/96)*Math.sin(6*mu)+(1097*e1**4/512)*Math.sin(8*mu);
+  const C1=ep2*Math.cos(phi1)**2, T1=Math.tan(phi1)**2;
+  const N1=a/Math.sqrt(1-e2*Math.sin(phi1)**2), R1=a*(1-e2)/Math.pow(1-e2*Math.sin(phi1)**2,1.5);
+  const D=x/(N1*k0);
+  const lat=phi1-(N1*Math.tan(phi1)/R1)*(D*D/2-(5+3*T1+10*C1-4*C1*C1-9*ep2)*D**4/24+(61+90*T1+298*C1+45*T1*T1-252*ep2-3*C1*C1)*D**6/720);
+  const lon=lon0*Math.PI/180+(D-(1+2*T1+C1)*D**3/6+(5-2*C1+28*T1-3*C1*C1+8*ep2+24*T1*T1)*D**5/120)/Math.cos(phi1);
+  return {lat:lat*180/Math.PI, lon:lon*180/Math.PI};
+}
+function showNav(name){const b=document.getElementById('navbar');document.getElementById('navlabel').textContent=name||'';b.style.display='flex';}
+function hideNav(){const b=document.getElementById('navbar');if(b)b.style.display='none';}
+function navigateTo(){
+  if(!lastTarget){toast('Önce bir hedef bul');return;}
+  const g=unproject(lastTarget.x-calib.dx, lastTarget.y-calib.dy);
+  if(!isFinite(g.lat)||!isFinite(g.lon)){toast('Konum çevrilemedi');return;}
+  const lat=g.lat.toFixed(7), lon=g.lon.toFixed(7);
+  const web='https://www.google.com/maps/dir/?api=1&destination='+lat+','+lon+'&travelmode=driving';
+  const a=document.createElement('a');a.href=web;a.target='_blank';a.rel='noopener';
+  document.body.appendChild(a);a.click();a.remove();
+}
+
+/* ==== Uydu / yol altlığı (çizimin gerçek UTM koordinatına hizalı) ==== */
+function setBase(btn,b){baseLayer=b;document.querySelectorAll('.baselayerbtn').forEach(x=>{x.style.background='';x.style.color='';});if(btn){btn.style.background='var(--accent)';btn.style.color='#fff';}render();}
+function tileURLs(z,x,y){
+  if(baseLayer==='yol')return ['https://tile.openstreetmap.org/'+z+'/'+x+'/'+y+'.png'];
+  if(baseLayer==='uydu')return ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+z+'/'+y+'/'+x];
+  if(baseLayer==='hibrit')return ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/'+z+'/'+y+'/'+x,
+    'https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/'+z+'/'+y+'/'+x];
+  return [];
+}
+function tileBounds(z,x,y){const n=2**z;
+  const lon1=x/n*360-180, lon2=(x+1)/n*360-180;
+  const lat1=Math.atan(Math.sinh(Math.PI*(1-2*y/n)))*180/Math.PI;
+  const lat2=Math.atan(Math.sinh(Math.PI*(1-2*(y+1)/n)))*180/Math.PI;
+  return {lon1,lon2,lat1,lat2};}
+function drawTile(z,x,y){
+  const urls=tileURLs(z,x,y);const b=tileBounds(z,x,y);
+  const tl=project(b.lat1,b.lon1), br=project(b.lat2,b.lon2);
+  const s1=w2s(tl.e,tl.n), s2=w2s(br.e,br.n);
+  const dx=Math.min(s1[0],s2[0]),dy=Math.min(s1[1],s2[1]),dw=Math.abs(s2[0]-s1[0]),dh=Math.abs(s2[1]-s1[1]);
+  for(const url of urls){let img=tileCache.get(url);
+    if(!img){img=new Image();img.crossOrigin='anonymous';img.onload=()=>render();img.onerror=()=>{};img.src=url;tileCache.set(url,img);}
+    if(img.complete&&img.naturalWidth){try{ctx.drawImage(img,dx-0.5,dy-0.5,dw+1,dh+1);}catch(e){}}
+  }
+}
+function drawBasemap(){
+  if(baseLayer==='none'||!drawing)return;
+  const W=innerWidth,H=innerHeight;
+  const corners=[[0,0],[W,0],[0,H],[W,H]].map(p=>{const w=s2w(p[0],p[1]);return unproject(w[0],w[1]);});
+  if(corners.some(c=>!isFinite(c.lat)||!isFinite(c.lon)))return;
+  const lat0=corners[0].lat;
+  let z=Math.round(Math.log2(156543.03392*Math.cos(lat0*Math.PI/180)*state.scale));
+  z=Math.max(2,Math.min(19,z));
+  const minLat=Math.min(...corners.map(c=>c.lat)),maxLat=Math.max(...corners.map(c=>c.lat));
+  const minLon=Math.min(...corners.map(c=>c.lon)),maxLon=Math.max(...corners.map(c=>c.lon));
+  const n=2**z;
+  const xt=l=>Math.floor((l+180)/360*n);
+  const yt=l=>Math.floor((1-Math.log(Math.tan(l*Math.PI/180)+1/Math.cos(l*Math.PI/180))/Math.PI)/2*n);
+  let x0=xt(minLon),x1=xt(maxLon),y0=yt(maxLat),y1=yt(minLat);
+  if((x1-x0+1)*(y1-y0+1)>400)return;   // aşırı geniş görünüm
+  for(let x=x0;x<=x1;x++)for(let y=y0;y<=y1;y++)drawTile(z,x,y);
+  ctx.font='10px sans-serif';ctx.fillStyle='rgba(255,255,255,.6)';
+  ctx.fillText(baseLayer==='yol'?'© OpenStreetMap':'© Esri',W-70,H-6);
 }
 
 /* ==== GPS: canlı takip ==== */
@@ -565,7 +655,7 @@ function saveNote(){const t=document.getElementById('noteText').value.trim();if(
   persistNotes();renderNoteList();mode='none';setNoteFab(false);closeSheets();render();toast('Not kaydedildi');}
 function deleteCurrentNote(){if(!editing)return;notes=notes.filter(n=>n.id!==editing.id);persistNotes();renderNoteList();closeSheets();render();toast('Not silindi');}
 function delNote(id){notes=notes.filter(n=>n.id!==id);persistNotes();renderNoteList();render();}
-function gotoNote(id){const n=notes.find(x=>x.id===id);if(!n)return;gotoPoint(n.x,n.y);highlight={x:n.x,y:n.y};if(highlightTimer)clearTimeout(highlightTimer);highlightTimer=setTimeout(()=>{highlight=null;render();},3000);render();}
+function gotoNote(id){const n=notes.find(x=>x.id===id);if(!n)return;gotoPoint(n.x,n.y);highlight={x:n.x,y:n.y};lastTarget={x:n.x,y:n.y};showNav(n.text);if(highlightTimer)clearTimeout(highlightTimer);highlightTimer=setTimeout(()=>{highlight=null;render();},3000);render();}
 function renderNoteList(){const el=document.getElementById('noteList');if(!el)return;
   if(!notes.length){el.innerHTML='<div class="note">Henüz not yok.</div>';return;}
   el.innerHTML='';notes.forEach(n=>{const d=document.createElement('div');d.className='noteitem';
