@@ -1,0 +1,8 @@
+{
+  "appId": "com.harita.cadviewer",
+  "appName": "CAD Görüntüleyici",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true
+  }
+}
