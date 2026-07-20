@@ -583,6 +583,39 @@ function clearMeasure(){measure=null;render();closeSheets();}
 function persistNotes(){try{localStorage.setItem('notes:'+(curFile||'x'),JSON.stringify(notes));}catch(e){}}
 function loadNotes(name){curFile=name;try{const s=localStorage.getItem('notes:'+name);notes=s?JSON.parse(s):[];}catch(e){notes=[];}
   noteSeq=notes.reduce((m,n)=>Math.max(m,n.id||0),0)+1;renderNoteList();}
+function blobToB64(blob){return new Promise((res,rej)=>{const r=new FileReader();r.onloadend=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(blob);});}
+function shareImage(){
+  render();
+  const dpr=window.devicePixelRatio||1;
+  const ex=document.createElement('canvas');ex.width=cv.width;ex.height=cv.height;
+  const g=ex.getContext('2d');
+  g.fillStyle='#1e1e1e';g.fillRect(0,0,ex.width,ex.height);
+  g.drawImage(cv,0,0);
+  g.setTransform(dpr,0,0,dpr,0,0);
+  const H=ex.height/dpr;
+  if(curFile){g.font='13px sans-serif';g.fillStyle='rgba(255,255,255,.85)';g.fillText(curFile,12,20);}
+  g.font='12px sans-serif';g.fillStyle='rgba(255,255,255,.85)';
+  g.fillText('Hazırlayan: Bayram Yaraş · 0530 630 05 40',12,H-12);
+  ex.toBlob(async(blob)=>{
+    if(!blob){toast('Resim oluşturulamadı');return;}
+    const base=(curFile?curFile.replace(/\.[^.]+$/,''):'cizim')+'-notlu.png';
+    try{
+      const P=window.Capacitor&&window.Capacitor.Plugins;
+      if(P&&P.Filesystem&&P.Share){
+        const b64=await blobToB64(blob);
+        const w=await P.Filesystem.writeFile({path:base,data:b64,directory:'CACHE'});
+        await P.Share.share({title:base,text:'CAD notu',url:w.uri,dialogTitle:'Gönder'});
+        return;
+      }
+      const file=new File([blob],base,{type:'image/png'});
+      if(navigator.canShare&&navigator.canShare({files:[file]})){
+        await navigator.share({files:[file],title:base,text:'CAD notu'});return;
+      }
+      const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=base;a.click();
+      toast('Paylaşım yok — resim indirildi');
+    }catch(e){toast('Gönderilemedi: '+e.message);}
+  },'image/png');
+}
 
 /* Haritaya dokunma: kalibrasyon / not / ölçü */
 cv.addEventListener('click',e=>{
