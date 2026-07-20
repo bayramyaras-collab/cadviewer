@@ -122,6 +122,12 @@ if (addP) {
   ok('GPS ve dosya izinleri eklendi');
 } else info('İzinler zaten var');
 
+// 3a2) Büyük dosyalar için largeHeap (WebView belleğini artırır)
+if (!xml.includes('largeHeap')) {
+  xml = xml.replace('<application', '<application android:largeHeap="true"');
+  ok('largeHeap açıldı (büyük DXF belleği)');
+} else info('largeHeap zaten var');
+
 // 3b) Dosya-açma intent-filter'ları (WhatsApp / dosya yöneticisi)
 if (xml.includes('CADVIEWER-INTENTS')) {
   info('Dosya-açma kayıtları zaten var');
