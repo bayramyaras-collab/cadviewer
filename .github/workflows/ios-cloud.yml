@@ -53,10 +53,12 @@ jobs:
           d['CFBundleDisplayName']='CAD Görüntüleyici'
           d['NSLocationWhenInUseUsageDescription']='CAD Görüntüleyici, konumunuzu haritada göstermek için konum izni kullanır.'
           d['UIFileSharingEnabled']=True
-          d['LSSupportsOpeningDocumentsInPlace']=True
+          # WhatsApp/Dosyalar Open-In: iOS dosyayı uygulamanın Inbox alanına kopyalasın.
+          # Böylece güvenlik-kapsamlı dış URL süresi bittikten sonra da WebView dosyayı okuyabilir.
+          d['LSSupportsOpeningDocumentsInPlace']=False
           d['CFBundleDocumentTypes']=[
-            {'CFBundleTypeName':'AutoCAD DXF','CFBundleTypeRole':'Viewer','LSHandlerRank':'Alternate','LSItemContentTypes':['com.autodesk.autocad.dxf','public.data']},
-            {'CFBundleTypeName':'AutoCAD DWG','CFBundleTypeRole':'Viewer','LSHandlerRank':'Alternate','LSItemContentTypes':['com.autodesk.autocad.dwg','public.data']}
+            {'CFBundleTypeName':'AutoCAD DXF','CFBundleTypeRole':'Viewer','LSHandlerRank':'Owner','LSItemContentTypes':['com.autodesk.autocad.dxf','public.data']},
+            {'CFBundleTypeName':'AutoCAD DWG','CFBundleTypeRole':'Viewer','LSHandlerRank':'Alternate','LSItemContentTypes':['com.autodesk.autocad.dwg']}
           ]
           with p.open('wb') as f: plistlib.dump(d,f)
           PY
