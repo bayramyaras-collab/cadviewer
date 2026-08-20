@@ -3,6 +3,8 @@ name: iOS IPA Derle
 on:
   push:
     branches: [ ios-cloud-build ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -56,7 +58,6 @@ jobs:
           with p.open('wb') as f: plistlib.dump(d,f)
           PY
 
-          # Mevcut CAD ikonunu iOS AppIcon'a uygula
           ICON=$(find ios/App/App/Assets.xcassets/AppIcon.appiconset -type f -name '*.png' | head -1 || true)
           if [ -n "$ICON" ] && [ -f assets/icon.png ]; then
             cp assets/icon.png "$ICON"
