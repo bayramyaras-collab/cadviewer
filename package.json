@@ -1,12 +1,13 @@
 {
   "name": "cad-goruntuleyici",
-  "version": "1.0.0",
+  "version": "1.0.1-ios-open",
   "private": true,
-  "description": "DXF görüntüleyici + GPS + trafo/direk arama (Capacitor Android)",
+  "description": "DXF görüntüleyici + GPS + trafo/direk arama (Capacitor Android/iOS)",
   "dependencies": {
     "@capacitor/android": "^6.1.2",
     "@capacitor/cli": "^6.1.2",
     "@capacitor/core": "^6.1.2",
+    "@capacitor/app": "^6.0.1",
     "@capacitor/geolocation": "^6.0.1",
     "@capacitor/share": "^6.0.3",
     "@capacitor/filesystem": "^6.0.1"

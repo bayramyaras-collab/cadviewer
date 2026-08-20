@@ -1,0 +1,149 @@
+name: iOS IPA Derle
+
+on:
+  push:
+    branches: [ ios-cloud-build ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-ios:
+    if: ${{ !contains(github.event.head_commit.message || '', '[ios-build-output]') }}
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Kodu al
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - name: Node kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Web dosyasini hazirla
+        run: |
+          mkdir -p www
+          cp index.html www/index.html
+
+      - name: Paketleri yukle
+        run: |
+          npm install
+          npm install --no-save @capacitor/ios@6.1.2
+
+      - name: iOS projesini olustur
+        run: |
+          rm -rf ios
+          npx cap add ios
+          npx cap sync ios
+
+      - name: iOS ayarlari
+        run: |
+          python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+          p=Path('ios/App/App/Info.plist')
+          with p.open('rb') as f: d=plistlib.load(f)
+          d['CFBundleDisplayName']='CAD Görüntüleyici'
+          d['NSLocationWhenInUseUsageDescription']='CAD Görüntüleyici, konumunuzu haritada göstermek için konum izni kullanır.'
+          d['UIFileSharingEnabled']=True
+          # WhatsApp/Dosyalar Open-In: iOS dosyayı uygulamanın Inbox alanına kopyalasın.
+          # Böylece güvenlik-kapsamlı dış URL süresi bittikten sonra da WebView dosyayı okuyabilir.
+          d['LSSupportsOpeningDocumentsInPlace']=False
+          d['CFBundleDocumentTypes']=[
+            {'CFBundleTypeName':'AutoCAD DXF','CFBundleTypeRole':'Viewer','LSHandlerRank':'Owner','LSItemContentTypes':['com.autodesk.autocad.dxf','public.data']},
+            {'CFBundleTypeName':'AutoCAD DWG','CFBundleTypeRole':'Viewer','LSHandlerRank':'Alternate','LSItemContentTypes':['com.autodesk.autocad.dwg']}
+          ]
+          with p.open('wb') as f: plistlib.dump(d,f)
+          PY
+
+          ICON=$(find ios/App/App/Assets.xcassets/AppIcon.appiconset -type f -name '*.png' | head -1 || true)
+          if [ -n "$ICON" ] && [ -f assets/icon.png ]; then
+            cp assets/icon.png "$ICON"
+          fi
+
+      - name: Xcode bilgisi
+        run: |
+          xcodebuild -version
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -showBuildSettings | head -80
+
+      - name: Imzasiz iPhone uygulamasini derle
+        id: xcode
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            build 2>&1 | tee xcodebuild.log
+
+      - name: IPA paketle
+        id: ipa
+        if: steps.xcode.outcome == 'success'
+        continue-on-error: true
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -type d -name '*.app' | head -1)
+          test -n "$APP"
+          rm -rf Payload
+          mkdir Payload
+          cp -R "$APP" Payload/
+          /usr/bin/zip -qry CAD_Goruntuleyici_iPhone_UNSIGNED.ipa Payload
+          ls -lh CAD_Goruntuleyici_iPhone_UNSIGNED.ipa
+
+      - name: IPA artifact yukle
+        if: steps.xcode.outcome == 'success' && steps.ipa.outcome == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CAD-Goruntuleyici-iPhone-IPA
+          path: |
+            CAD_Goruntuleyici_iPhone_UNSIGNED.ipa
+            xcodebuild.log
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: IPA Release yayinla
+        if: github.event_name == 'push' && steps.xcode.outcome == 'success' && steps.ipa.outcome == 'success'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-cloud-${{ github.run_number }}
+          name: CAD Görüntüleyici iPhone - Bulut Derleme ${{ github.run_number }}
+          prerelease: true
+          files: CAD_Goruntuleyici_iPhone_UNSIGNED.ipa
+
+      - name: Derleme sonucunu repoya yaz
+        if: always() && github.event_name == 'push'
+        run: |
+          {
+            echo "CAD Goruntuleyici iOS cloud build"
+            echo "run=${GITHUB_RUN_NUMBER}"
+            echo "commit=${GITHUB_SHA}"
+            echo "xcode_outcome=${{ steps.xcode.outcome }}"
+            echo "ipa_outcome=${{ steps.ipa.outcome }}"
+            echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "release_tag=ios-cloud-${GITHUB_RUN_NUMBER}"
+            if [ -f xcodebuild.log ]; then
+              echo "--- LOG SONU ---"
+              tail -120 xcodebuild.log
+            fi
+          } > ios-build-result.txt
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add ios-build-result.txt
+          git commit -m "[ios-build-output] iOS build ${{ steps.xcode.outcome }}" || true
+          git push origin HEAD:ios-cloud-build
+
+      - name: Basarisiz derlemeyi hata olarak isaretle
+        if: steps.xcode.outcome != 'success' || steps.ipa.outcome != 'success'
+        run: exit 1
