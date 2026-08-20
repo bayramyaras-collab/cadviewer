@@ -1,0 +1,105 @@
+name: iOS IPA Derle
+
+on:
+  push:
+    branches: [ ios-cloud-build ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    timeout-minutes: 30
+
+    steps:
+      - name: Kodu al
+        uses: actions/checkout@v4
+
+      - name: Node kur
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Web dosyasini hazirla
+        run: |
+          mkdir -p www
+          cp index.html www/index.html
+
+      - name: Paketleri yukle
+        run: |
+          npm install
+          npm install --no-save @capacitor/ios@6.1.2
+
+      - name: iOS projesini olustur
+        run: |
+          rm -rf ios
+          npx cap add ios
+          npx cap sync ios
+
+      - name: iOS ayarlari
+        run: |
+          python3 - <<'PY'
+          import plistlib
+          from pathlib import Path
+          p=Path('ios/App/App/Info.plist')
+          with p.open('rb') as f: d=plistlib.load(f)
+          d['CFBundleDisplayName']='CAD Görüntüleyici'
+          d['NSLocationWhenInUseUsageDescription']='CAD Görüntüleyici, konumunuzu haritada göstermek için konum izni kullanır.'
+          d['UIFileSharingEnabled']=True
+          d['LSSupportsOpeningDocumentsInPlace']=True
+          d['CFBundleDocumentTypes']=[
+            {'CFBundleTypeName':'AutoCAD DXF','CFBundleTypeRole':'Viewer','LSHandlerRank':'Alternate','LSItemContentTypes':['com.autodesk.autocad.dxf','public.data']},
+            {'CFBundleTypeName':'AutoCAD DWG','CFBundleTypeRole':'Viewer','LSHandlerRank':'Alternate','LSItemContentTypes':['com.autodesk.autocad.dwg','public.data']}
+          ]
+          with p.open('wb') as f: plistlib.dump(d,f)
+          PY
+
+          # Mevcut CAD ikonunu iOS AppIcon'a uygula
+          ICON=$(find ios/App/App/Assets.xcassets/AppIcon.appiconset -type f -name '*.png' | head -1 || true)
+          if [ -n "$ICON" ] && [ -f assets/icon.png ]; then
+            cp assets/icon.png "$ICON"
+          fi
+
+      - name: Xcode bilgisi
+        run: |
+          xcodebuild -version
+          xcodebuild -workspace ios/App/App.xcworkspace -scheme App -showBuildSettings | head -80
+
+      - name: Imzasiz iPhone uygulamasini derle
+        run: |
+          set -o pipefail
+          xcodebuild \
+            -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY='' \
+            build | tee xcodebuild.log
+
+      - name: IPA paketle
+        run: |
+          APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -type d -name '*.app' | head -1)
+          if [ -z "$APP" ]; then
+            echo 'APP bulunamadi'
+            exit 1
+          fi
+          rm -rf Payload
+          mkdir Payload
+          cp -R "$APP" Payload/
+          /usr/bin/zip -qry CAD_Goruntuleyici_iPhone_UNSIGNED.ipa Payload
+          ls -lh CAD_Goruntuleyici_iPhone_UNSIGNED.ipa
+
+      - name: IPA artifact yukle
+        uses: actions/upload-artifact@v4
+        with:
+          name: CAD-Goruntuleyici-iPhone-IPA
+          path: |
+            CAD_Goruntuleyici_iPhone_UNSIGNED.ipa
+            xcodebuild.log
+          if-no-files-found: error
+          retention-days: 30
