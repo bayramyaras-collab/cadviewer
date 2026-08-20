@@ -8,16 +8,19 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build-ios:
+    if: ${{ !contains(github.event.head_commit.message || '', '[ios-build-output]') }}
     runs-on: macos-15
     timeout-minutes: 30
 
     steps:
       - name: Kodu al
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
 
       - name: Node kur
         uses: actions/setup-node@v4
@@ -69,6 +72,8 @@ jobs:
           xcodebuild -workspace ios/App/App.xcworkspace -scheme App -showBuildSettings | head -80
 
       - name: Imzasiz iPhone uygulamasini derle
+        id: xcode
+        continue-on-error: true
         run: |
           set -o pipefail
           xcodebuild \
@@ -80,15 +85,15 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY='' \
-            build | tee xcodebuild.log
+            build 2>&1 | tee xcodebuild.log
 
       - name: IPA paketle
+        id: ipa
+        if: steps.xcode.outcome == 'success'
+        continue-on-error: true
         run: |
           APP=$(find build/Build/Products/Release-iphoneos -maxdepth 1 -type d -name '*.app' | head -1)
-          if [ -z "$APP" ]; then
-            echo 'APP bulunamadi'
-            exit 1
-          fi
+          test -n "$APP"
           rm -rf Payload
           mkdir Payload
           cp -R "$APP" Payload/
@@ -96,6 +101,7 @@ jobs:
           ls -lh CAD_Goruntuleyici_iPhone_UNSIGNED.ipa
 
       - name: IPA artifact yukle
+        if: steps.xcode.outcome == 'success' && steps.ipa.outcome == 'success'
         uses: actions/upload-artifact@v4
         with:
           name: CAD-Goruntuleyici-iPhone-IPA
@@ -104,3 +110,38 @@ jobs:
             xcodebuild.log
           if-no-files-found: error
           retention-days: 30
+
+      - name: IPA Release yayinla
+        if: github.event_name == 'push' && steps.xcode.outcome == 'success' && steps.ipa.outcome == 'success'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ios-cloud-${{ github.run_number }}
+          name: CAD Görüntüleyici iPhone - Bulut Derleme ${{ github.run_number }}
+          prerelease: true
+          files: CAD_Goruntuleyici_iPhone_UNSIGNED.ipa
+
+      - name: Derleme sonucunu repoya yaz
+        if: always() && github.event_name == 'push'
+        run: |
+          {
+            echo "CAD Goruntuleyici iOS cloud build"
+            echo "run=${GITHUB_RUN_NUMBER}"
+            echo "commit=${GITHUB_SHA}"
+            echo "xcode_outcome=${{ steps.xcode.outcome }}"
+            echo "ipa_outcome=${{ steps.ipa.outcome }}"
+            echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "release_tag=ios-cloud-${GITHUB_RUN_NUMBER}"
+            if [ -f xcodebuild.log ]; then
+              echo "--- LOG SONU ---"
+              tail -120 xcodebuild.log
+            fi
+          } > ios-build-result.txt
+          git config user.name github-actions
+          git config user.email github-actions@github.com
+          git add ios-build-result.txt
+          git commit -m "[ios-build-output] iOS build ${{ steps.xcode.outcome }}" || true
+          git push origin HEAD:ios-cloud-build
+
+      - name: Basarisiz derlemeyi hata olarak isaretle
+        if: steps.xcode.outcome != 'success' || steps.ipa.outcome != 'success'
+        run: exit 1
